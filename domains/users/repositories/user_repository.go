@@ -17,9 +17,9 @@ type UserRepository struct {
 func NewUserRepository() *UserRepository {
 	users = append(users, entities.User{
 		Id:       1,
-		Username: "cho",
-		Name:     "Nicholas Audric",
-		Password: helpers.GenerateHashedPassword("password123"),
+		Username: "Lui",
+		Name:     "Luigi",
+		Password: helpers.GenerateHashedPassword("12345678"),
 	})
 	return &UserRepository{}
 }
