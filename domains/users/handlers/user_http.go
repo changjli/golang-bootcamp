@@ -13,7 +13,7 @@ type UserHttp struct {
 	UserUseCase usecases.UserUseCaseInterface
 }
 
-func NewUserHttp(userUseCase usecases.UserUseCaseInterface) UserHttpInterface {
+func NewUserHttp(userUseCase usecases.UserUseCaseInterface) *UserHttp {
 	return &UserHttp{
 		UserUseCase: userUseCase,
 	}

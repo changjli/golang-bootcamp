@@ -1,8 +1,8 @@
 package middlewares
 
 import (
+	accesstokens "login-api/domains/access_tokens"
 	"login-api/domains/users/entities"
-	"login-api/wizards"
 	"net/http"
 	"strings"
 	"time"
@@ -11,7 +11,17 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-func HandleProtectedRoutes(c *gin.Context) {
+type AuthMiddleware struct {
+	AccessTokenUsecase accesstokens.AccessTokenUsecaseInterface
+}
+
+func NewAuthMiddleware(accessTokenUsecase accesstokens.AccessTokenUsecaseInterface) *AuthMiddleware {
+	return &AuthMiddleware{
+		AccessTokenUsecase: accessTokenUsecase,
+	}
+}
+
+func (m *AuthMiddleware) HandleProtectedRoutes(c *gin.Context) {
 	authHeader := c.GetHeader("Authorization")
 	if authHeader == "" {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
@@ -45,13 +55,22 @@ func HandleProtectedRoutes(c *gin.Context) {
 		return
 	}
 
-	// Check access token
-	_, found := wizards.Cache.Get(claims.Jti)
-	if found {
+	// == database method ==
+	err = m.AccessTokenUsecase.Validate(c, claims.Jti)
+	if err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
 		c.Abort()
 		return
 	}
+
+	// == cache method ==
+	// // Check access token
+	// _, found := wizards.Cache.Get(claims.Jti)
+	// if found {
+	// 	c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+	// 	c.Abort()
+	// 	return
+	// }
 
 	c.Set("claims", claims)
 

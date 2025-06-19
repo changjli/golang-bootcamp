@@ -14,7 +14,7 @@ var users []entities.User
 type UserRepository struct {
 }
 
-func NewUserRepository() UserRepositoryInterface {
+func NewUserRepository() *UserRepository {
 	users = append(users, entities.User{
 		Id:       1,
 		Username: "cho",

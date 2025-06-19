@@ -2,11 +2,11 @@ package usecases
 
 import (
 	"fmt"
+	accesstokens "login-api/domains/access_tokens"
 	"login-api/domains/users/entities"
 	"login-api/domains/users/models/requests"
 	"login-api/domains/users/models/responses"
 	"login-api/domains/users/repositories"
-	"login-api/wizards"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -15,12 +15,14 @@ import (
 )
 
 type UserUseCase struct {
-	UserRepository repositories.UserRepositoryInterface
+	UserRepository     repositories.UserRepositoryInterface
+	AccessTokenUseCase accesstokens.AccessTokenUsecaseInterface
 }
 
-func NewUserUseCase(userRepository repositories.UserRepositoryInterface) UserUseCaseInterface {
+func NewUserUseCase(userRepository repositories.UserRepositoryInterface, accessTokenUseCase accesstokens.AccessTokenUsecaseInterface) *UserUseCase {
 	return &UserUseCase{
-		UserRepository: userRepository,
+		UserRepository:     userRepository,
+		AccessTokenUseCase: accessTokenUseCase,
 	}
 }
 
@@ -53,6 +55,12 @@ func (uc *UserUseCase) Login(ctx *gin.Context, request requests.UserLoginRequest
 		AccessToken: tokenString,
 	}
 
+	// Store access token
+	err = uc.AccessTokenUseCase.Create(ctx, jti, user.Id, time.Now().Add(5*time.Minute))
+	if err != nil {
+		return nil, err
+	}
+
 	return response, nil
 }
 
@@ -80,14 +88,21 @@ func (uc *UserUseCase) Logout(ctx *gin.Context) error {
 
 	claims := ctxVal.(*entities.Claims)
 
-	// Revoke access token
-	durationUntilExpiry := time.Until(claims.ExpiresAt.Time)
-
-	if durationUntilExpiry <= 0 {
-		return nil
+	// == database method ==
+	err := uc.AccessTokenUseCase.Revoke(ctx, claims.Jti)
+	if err != nil {
+		return err
 	}
 
-	wizards.Cache.Set(claims.Jti, true, durationUntilExpiry)
+	// == cache method ==
+	// // Revoke access token
+	// durationUntilExpiry := time.Until(claims.ExpiresAt.Time)
+
+	// if durationUntilExpiry <= 0 {
+	// 	return nil
+	// }
+
+	// wizards.Cache.Set(claims.Jti, true, durationUntilExpiry)
 
 	return nil
 }

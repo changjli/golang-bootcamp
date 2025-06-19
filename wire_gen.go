@@ -9,9 +9,14 @@ package main
 import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/wire"
+	"login-api/domains/access_tokens"
+	repositories2 "login-api/domains/access_tokens/repositories"
+	"login-api/domains/access_tokens/usecases"
 	"login-api/domains/users/handlers"
 	"login-api/domains/users/repositories"
-	"login-api/domains/users/usecases"
+	usecases2 "login-api/domains/users/usecases"
+	"login-api/infrastructures"
+	"login-api/middlewares"
 	"login-api/routes"
 )
 
@@ -19,12 +24,20 @@ import (
 
 func InitializeServer() (*gin.Engine, error) {
 	userRepository := repositories.NewUserRepository()
-	userUseCase := usecases.NewUserUseCase(userRepository)
+	postgresDatabase := infrastructures.NewPostgresDatabase()
+	accessTokenRepository := repositories2.NewAccessTokenRepository(postgresDatabase)
+	accessTokenUsecase := usecases.NewAccessTokenUsecase(accessTokenRepository)
+	userUseCase := usecases2.NewUserUseCase(userRepository, accessTokenUsecase)
 	userHttp := handlers.NewUserHttp(userUseCase)
-	engine := routes.SetupRoutes(userHttp)
+	authMiddleware := middlewares.NewAuthMiddleware(accessTokenUsecase)
+	engine := routes.SetupRoutes(userHttp, authMiddleware)
 	return engine, nil
 }
 
 // injector.go:
 
-var userSet = wire.NewSet(repositories.NewUserRepository, wire.Bind(new(repositories.UserRepositoryInterface), new(*repositories.UserRepository)), usecases.NewUserUseCase, wire.Bind(new(usecases.UserUseCaseInterface), new(*usecases.UserUseCase)), handlers.NewUserHttp, wire.Bind(new(handlers.UserHttpInterface), new(*handlers.UserHttp)))
+var userSet = wire.NewSet(repositories.NewUserRepository, wire.Bind(new(repositories.UserRepositoryInterface), new(*repositories.UserRepository)), usecases2.NewUserUseCase, wire.Bind(new(usecases2.UserUseCaseInterface), new(*usecases2.UserUseCase)), handlers.NewUserHttp, wire.Bind(new(handlers.UserHttpInterface), new(*handlers.UserHttp)))
+
+var accessTokenSet = wire.NewSet(repositories2.NewAccessTokenRepository, wire.Bind(new(accesstokens.AccessTokenRepositoryInterface), new(*repositories2.AccessTokenRepository)), usecases.NewAccessTokenUsecase, wire.Bind(new(accesstokens.AccessTokenUsecaseInterface), new(*usecases.AccessTokenUsecase)))
+
+var databaseSet = wire.NewSet(infrastructures.NewPostgresDatabase, wire.Bind(new(infrastructures.Database), new(*infrastructures.PostgresDatabase)))
