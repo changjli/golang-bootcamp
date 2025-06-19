@@ -6,17 +6,19 @@ import (
 	"login-api/domains/users/models/requests"
 	"login-api/domains/users/models/responses"
 	"login-api/domains/users/repositories"
+	"login-api/wizards"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 type UserUseCase struct {
 	UserRepository repositories.UserRepositoryInterface
 }
 
-func NewUserUseCase(userRepository repositories.UserRepositoryInterface) *UserUseCase {
+func NewUserUseCase(userRepository repositories.UserRepositoryInterface) UserUseCaseInterface {
 	return &UserUseCase{
 		UserRepository: userRepository,
 	}
@@ -30,11 +32,14 @@ func (uc *UserUseCase) Login(ctx *gin.Context, request requests.UserLoginRequest
 
 	expirationTime := time.Now().Add(5 * time.Minute)
 
+	jti := uuid.New().String()
+
 	claims := &entities.Claims{
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 		},
 		Username: user.Username,
+		Jti:      jti,
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -52,18 +57,11 @@ func (uc *UserUseCase) Login(ctx *gin.Context, request requests.UserLoginRequest
 }
 
 func (uc *UserUseCase) Me(ctx *gin.Context) (*responses.UserMeResponse, error) {
-	value, exist := ctx.Get("username")
+	ctxVal, _ := ctx.Get("claims")
 
-	if !exist {
-		return nil, fmt.Errorf("Unauthorized")
-	}
+	claims := ctxVal.(*entities.Claims)
 
-	username, ok := value.(string)
-	if !ok {
-		return nil, fmt.Errorf("Unauthorized")
-	}
-
-	user, err := uc.UserRepository.FindByUsername(ctx, string(username))
+	user, err := uc.UserRepository.FindByUsername(ctx, claims.Username)
 	if err != nil {
 		return nil, fmt.Errorf("Unauthorized")
 	}
@@ -75,4 +73,21 @@ func (uc *UserUseCase) Me(ctx *gin.Context) (*responses.UserMeResponse, error) {
 	}
 
 	return response, nil
+}
+
+func (uc *UserUseCase) Logout(ctx *gin.Context) error {
+	ctxVal, _ := ctx.Get("claims")
+
+	claims := ctxVal.(*entities.Claims)
+
+	// Revoke access token
+	durationUntilExpiry := time.Until(claims.ExpiresAt.Time)
+
+	if durationUntilExpiry <= 0 {
+		return nil
+	}
+
+	wizards.Cache.Set(claims.Jti, true, durationUntilExpiry)
+
+	return nil
 }

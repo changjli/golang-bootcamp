@@ -17,6 +17,7 @@ func SetupRoutes(userHttp handlers.UserHttpInterface) *gin.Engine {
 	api.Use(middlewares.HandleProtectedRoutes)
 
 	api.GET("/auth/me", userHttp.Me)
+	api.POST("/auth/logout", userHttp.Logout)
 
 	return route
 }

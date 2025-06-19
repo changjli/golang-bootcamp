@@ -10,4 +10,5 @@ import (
 type UserUseCaseInterface interface {
 	Login(ctx *gin.Context, request requests.UserLoginRequest) (*responses.UserLoginResponse, error)
 	Me(ctx *gin.Context) (*responses.UserMeResponse, error)
+	Logout(ctx *gin.Context) error
 }
