@@ -12,6 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type UserUseCase struct {
@@ -24,6 +25,42 @@ func NewUserUseCase(userRepository repositories.UserRepositoryInterface, accessT
 		UserRepository:     userRepository,
 		AccessTokenUseCase: accessTokenUseCase,
 	}
+}
+
+func (uc *UserUseCase) Register(ctx *gin.Context, request requests.UserRegisterRequest) (*responses.UserRegisterResponse, error) {
+	// Check if the username is already taken to avoid duplicates.
+	_, err := uc.UserRepository.FindByUsername(ctx, request.Username)
+	if err == nil {
+		return nil, fmt.Errorf("username '%s' is already taken", request.Username)
+	}
+
+	// Hash the user's password for secure storage.
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(request.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return nil, fmt.Errorf("failed to hash password: %w", err)
+	}
+
+	// Create a new user entity.
+	user := &entities.User{
+		Username: request.Username,
+		Email:    request.Email,
+		Password: string(hashedPassword),
+	}
+
+	// Save the new user to the repository.
+	savedUser, err := uc.UserRepository.Save(ctx, user)
+	if err != nil {
+		return nil, fmt.Errorf("failed to register user: %w", err)
+	}
+
+	// Prepare the response, excluding sensitive data like the password.
+	response := &responses.UserRegisterResponse{
+		UserId:   savedUser.Id,
+		Username: savedUser.Username,
+		Email:    savedUser.Email,
+	}
+
+	return response, nil
 }
 
 func (uc *UserUseCase) Login(ctx *gin.Context, request requests.UserLoginRequest) (*responses.UserLoginResponse, error) {
@@ -41,6 +78,7 @@ func (uc *UserUseCase) Login(ctx *gin.Context, request requests.UserLoginRequest
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 		},
 		Username: user.Username,
+		UserId:   user.Id,
 		Jti:      jti,
 	}
 

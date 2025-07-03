@@ -12,9 +12,17 @@ import (
 	"login-api/domains/access_tokens"
 	repositories2 "login-api/domains/access_tokens/repositories"
 	"login-api/domains/access_tokens/usecases"
+	"login-api/domains/transaction"
+	handlers3 "login-api/domains/transaction/handlers"
+	repositories4 "login-api/domains/transaction/repositories"
+	usecases4 "login-api/domains/transaction/usecases"
 	"login-api/domains/users/handlers"
 	"login-api/domains/users/repositories"
 	usecases2 "login-api/domains/users/usecases"
+	"login-api/domains/wallet"
+	handlers2 "login-api/domains/wallet/handlers"
+	repositories3 "login-api/domains/wallet/repositories"
+	usecases3 "login-api/domains/wallet/usecases"
 	"login-api/infrastructures"
 	"login-api/middlewares"
 	"login-api/routes"
@@ -23,14 +31,20 @@ import (
 // Injectors from injector.go:
 
 func InitializeServer() (*gin.Engine, error) {
-	userRepository := repositories.NewUserRepository()
 	postgresDatabase := infrastructures.NewPostgresDatabase()
+	userRepository := repositories.NewUserRepository(postgresDatabase)
 	accessTokenRepository := repositories2.NewAccessTokenRepository(postgresDatabase)
 	accessTokenUsecase := usecases.NewAccessTokenUsecase(accessTokenRepository)
 	userUseCase := usecases2.NewUserUseCase(userRepository, accessTokenUsecase)
 	userHttp := handlers.NewUserHttp(userUseCase)
+	walletRepositoryImpl := repositories3.NewWalletRepository(postgresDatabase)
+	walletUseCaseImpl := usecases3.NewWalletUsecase(walletRepositoryImpl)
+	walletHandler := handlers2.NewWalletHandler(walletUseCaseImpl)
+	transactionRepositoryImpl := repositories4.NewTransactionRepository(postgresDatabase)
+	transactionUseCaseImpl := usecases4.NewTransactionUsecase(postgresDatabase, transactionRepositoryImpl, walletRepositoryImpl)
+	transactionHandler := handlers3.NewTransactionHandler(transactionUseCaseImpl)
 	authMiddleware := middlewares.NewAuthMiddleware(accessTokenUsecase)
-	engine := routes.SetupRoutes(userHttp, authMiddleware)
+	engine := routes.SetupRoutes(userHttp, walletHandler, transactionHandler, authMiddleware)
 	return engine, nil
 }
 
@@ -39,5 +53,9 @@ func InitializeServer() (*gin.Engine, error) {
 var userSet = wire.NewSet(repositories.NewUserRepository, wire.Bind(new(repositories.UserRepositoryInterface), new(*repositories.UserRepository)), usecases2.NewUserUseCase, wire.Bind(new(usecases2.UserUseCaseInterface), new(*usecases2.UserUseCase)), handlers.NewUserHttp, wire.Bind(new(handlers.UserHttpInterface), new(*handlers.UserHttp)))
 
 var accessTokenSet = wire.NewSet(repositories2.NewAccessTokenRepository, wire.Bind(new(accesstokens.AccessTokenRepositoryInterface), new(*repositories2.AccessTokenRepository)), usecases.NewAccessTokenUsecase, wire.Bind(new(accesstokens.AccessTokenUsecaseInterface), new(*usecases.AccessTokenUsecase)))
+
+var walletSet = wire.NewSet(repositories3.NewWalletRepository, wire.Bind(new(wallet.WalletRepository), new(*repositories3.WalletRepositoryImpl)), usecases3.NewWalletUsecase, wire.Bind(new(wallet.WalletUsecase), new(*usecases3.WalletUseCaseImpl)), handlers2.NewWalletHandler)
+
+var transactionSet = wire.NewSet(repositories4.NewTransactionRepository, wire.Bind(new(transaction.TransactionRepository), new(*repositories4.TransactionRepositoryImpl)), usecases4.NewTransactionUsecase, wire.Bind(new(transaction.TransactionUsecase), new(*usecases4.TransactionUseCaseImpl)), handlers3.NewTransactionHandler)
 
 var databaseSet = wire.NewSet(infrastructures.NewPostgresDatabase, wire.Bind(new(infrastructures.Database), new(*infrastructures.PostgresDatabase)))
