@@ -10,5 +10,5 @@ func main() {
 		log.Fatalf("Failed to initialize server: %v", err)
 	}
 
-	server.Run() // listen and serve on 0.0.0.0:8080
+	server.Run(":8081") // listen and serve on 0.0.0.0:8081
 }
