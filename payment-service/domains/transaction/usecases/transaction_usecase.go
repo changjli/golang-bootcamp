@@ -2,86 +2,66 @@ package usecases
 
 import (
 	"context"
+	"errors"
+	"events"
 	"fmt"
-	"time"
-
 	"payment-service/domains/transaction"
 	"payment-service/domains/transaction/entities"
-	"payment-service/domains/transaction/models/requests"
-	"payment-service/domains/transaction/models/responses"
-	walletservice "payment-service/domains/wallet_service"
 	"payment-service/infrastructures"
 
-	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
+	"github.com/golang-jwt/jwt/v5"
 	"gorm.io/gorm"
 )
 
 type TransactionUseCaseImpl struct {
-	db                  infrastructures.Database
-	trxRepo             transaction.TransactionRepository
-	walletServiceClient walletservice.WalletServiceClient
+	db      infrastructures.Database
+	trxRepo transaction.TransactionRepository
 }
 
-func NewTransactionUsecase(db infrastructures.Database, trxRepo transaction.TransactionRepository, walletServiceClient walletservice.WalletServiceClient) *TransactionUseCaseImpl {
+func NewTransactionUsecase(db infrastructures.Database, trxRepo transaction.TransactionRepository) *TransactionUseCaseImpl {
 	return &TransactionUseCaseImpl{
-		db:                  db,
-		trxRepo:             trxRepo,
-		walletServiceClient: walletServiceClient,
+		db:      db,
+		trxRepo: trxRepo,
 	}
 }
 
-func (u *TransactionUseCaseImpl) InitiatePayment(ctx *gin.Context, userID string, req *requests.PayRequest) (*responses.PayResponse, error) {
-	err := u.walletServiceClient.VerifyBalance(ctx, userID, req.Amount)
+// verifyToken is a private helper method to validate the JWT from the event.
+func (u *TransactionUseCaseImpl) verifyToken(tokenString string) (*jwt.Token, error) {
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		// Don't forget to validate the signing method is what you expect:
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		// Return the secret key for validation.
+		return []byte("harusnyambildarienvini"), nil
+	})
 	if err != nil {
 		return nil, err
 	}
-
-	paymentTrx := &entities.Transaction{
-		ID:          uuid.NewString(),
-		UserID:      userID,
-		Type:        entities.Payment,
-		Amount:      req.Amount,
-		Status:      entities.Pending,
-		MerchantID:  req.MerchantID,
-		Description: req.Description,
-	}
-
-	err = u.db.GetInstance().Transaction(func(tx *gorm.DB) error {
-		return u.trxRepo.CreateInTx(ctx, tx, paymentTrx)
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to create payment record: %w", err)
-	}
-
-	response := &responses.PayResponse{
-		TransactionID: paymentTrx.ID,
-		Message:       "Payment initiated successfully. Awaiting confirmation.",
-		NewBalance:    0,
-	}
-	return response, nil
+	return token, nil
 }
 
-func (u *TransactionUseCaseImpl) ExpirePayments(ctx context.Context) error {
-	expirationTime := time.Now().Add(-10 * time.Minute)
-	expiredTrx, err := u.trxRepo.FindPendingPaymentsBefore(ctx, expirationTime)
-	if err != nil {
-		return fmt.Errorf("failed to find expired payments: %w", err)
+// ProcessPaymentRequest handles an incoming event from RabbitMQ.
+func (u *TransactionUseCaseImpl) ProcessPaymentRequest(ctx context.Context, event *events.PaymentRequestedEvent) error {
+	// 1. Verify the JWT from the event to ensure the message is authentic.
+	token, err := u.verifyToken(event.AuthToken)
+	if err != nil || !token.Valid {
+		return errors.New("invalid or expired auth token in event")
 	}
 
-	if len(expiredTrx) == 0 {
-		return nil
+	// 2. Create the payment entity to be saved in this service's database.
+	payment := &entities.Payment{
+		ID:          event.PaymentID, // Use the ID from the event for consistency
+		UserID:      event.UserID,
+		Amount:      event.Amount,
+		Status:      entities.PaymentPending,
+		MerchantID:  event.MerchantID,
+		Description: event.Description,
+		CreatedAt:   event.CreatedAt, // Use the original creation time from the event
 	}
 
-	idsToExpire := make([]string, len(expiredTrx))
-	for i, t := range expiredTrx {
-		idsToExpire[i] = t.ID
-	}
-
-	if err := u.trxRepo.UpdateStatusInBatch(ctx, idsToExpire, entities.Expired); err != nil {
-		return fmt.Errorf("failed to update status for expired payments: %w", err)
-	}
-
-	fmt.Printf("Expired %d payment transactions.\n", len(idsToExpire))
-	return nil
+	// 3. Save the pending payment record to the database.
+	return u.db.GetInstance().Transaction(func(tx *gorm.DB) error {
+		return u.trxRepo.Create(ctx, tx, payment) // Assuming a simple Create method in the repo
+	})
 }

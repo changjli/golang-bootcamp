@@ -7,55 +7,44 @@
 package main
 
 import (
-	"github.com/gin-gonic/gin"
 	"github.com/google/wire"
-	"payment-service/domains/access_tokens"
-	repositories2 "payment-service/domains/access_tokens/repositories"
-	"payment-service/domains/access_tokens/usecases"
 	"payment-service/domains/transaction"
-	handlers2 "payment-service/domains/transaction/handlers"
-	repositories3 "payment-service/domains/transaction/repositories"
-	usecases3 "payment-service/domains/transaction/usecases"
-	"payment-service/domains/users/handlers"
-	"payment-service/domains/users/repositories"
-	usecases2 "payment-service/domains/users/usecases"
-	"payment-service/domains/wallet_service"
-	"payment-service/domains/wallet_service/clients"
+	"payment-service/domains/transaction/repositories"
+	"payment-service/domains/transaction/usecases"
 	"payment-service/infrastructures"
-	"payment-service/middlewares"
-	"payment-service/routes"
-	"payment-service/wizards"
+	"payment-service/infrastructures/messaging"
 )
 
 // Injectors from injector.go:
 
-func InitializeServer() (*gin.Engine, error) {
+func InitializeApp() (*App, error) {
 	postgresDatabase := infrastructures.NewPostgresDatabase()
-	userRepository := repositories.NewUserRepository(postgresDatabase)
-	accessTokenRepository := repositories2.NewAccessTokenRepository(postgresDatabase)
-	accessTokenUsecase := usecases.NewAccessTokenUsecase(accessTokenRepository)
-	userUseCase := usecases2.NewUserUseCase(userRepository, accessTokenUsecase)
-	userHttp := handlers.NewUserHttp(userUseCase)
-	transactionRepositoryImpl := repositories3.NewTransactionRepository(postgresDatabase)
-	config := wizards.NewConfig()
-	walletServiceClientImpl := clients.NewWalletServiceClient(config)
-	transactionUseCaseImpl := usecases3.NewTransactionUsecase(postgresDatabase, transactionRepositoryImpl, walletServiceClientImpl)
-	transactionHandler := handlers2.NewTransactionHandler(transactionUseCaseImpl)
-	authMiddleware := middlewares.NewAuthMiddleware(accessTokenUsecase)
-	engine := routes.SetupRoutes(userHttp, transactionHandler, authMiddleware)
-	return engine, nil
+	transactionRepositoryImpl := repositories.NewTransactionRepository(postgresDatabase)
+	transactionUseCaseImpl := usecases.NewTransactionUsecase(postgresDatabase, transactionRepositoryImpl)
+	paymentConsumer, err := messaging.NewPaymentConsumer(transactionUseCaseImpl)
+	if err != nil {
+		return nil, err
+	}
+	app := NewApp(paymentConsumer, transactionUseCaseImpl)
+	return app, nil
 }
 
 // injector.go:
 
-var configSet = wire.NewSet(wizards.NewConfig)
+type App struct {
+	Consumer *messaging.PaymentConsumer
+	Usecase  transaction.TransactionUsecase
+}
 
-var userSet = wire.NewSet(repositories.NewUserRepository, wire.Bind(new(repositories.UserRepositoryInterface), new(*repositories.UserRepository)), usecases2.NewUserUseCase, wire.Bind(new(usecases2.UserUseCaseInterface), new(*usecases2.UserUseCase)), handlers.NewUserHttp, wire.Bind(new(handlers.UserHttpInterface), new(*handlers.UserHttp)))
+// NewApp is the provider function for the App struct.
+func NewApp(consumer *messaging.PaymentConsumer, usecase transaction.TransactionUsecase) *App {
+	return &App{Consumer: consumer, Usecase: usecase}
+}
 
-var accessTokenSet = wire.NewSet(repositories2.NewAccessTokenRepository, wire.Bind(new(accesstokens.AccessTokenRepositoryInterface), new(*repositories2.AccessTokenRepository)), usecases.NewAccessTokenUsecase, wire.Bind(new(accesstokens.AccessTokenUsecaseInterface), new(*usecases.AccessTokenUsecase)))
-
-var walletSet = wire.NewSet(clients.NewWalletServiceClient, wire.Bind(new(walletservice.WalletServiceClient), new(*clients.WalletServiceClientImpl)))
-
-var transactionSet = wire.NewSet(repositories3.NewTransactionRepository, wire.Bind(new(transaction.TransactionRepository), new(*repositories3.TransactionRepositoryImpl)), usecases3.NewTransactionUsecase, wire.Bind(new(transaction.TransactionUsecase), new(*usecases3.TransactionUseCaseImpl)), handlers2.NewTransactionHandler)
+var transactionSet = wire.NewSet(repositories.NewTransactionRepository, wire.Bind(new(transaction.TransactionRepository), new(*repositories.TransactionRepositoryImpl)), usecases.NewTransactionUsecase, wire.Bind(new(transaction.TransactionUsecase), new(*usecases.TransactionUseCaseImpl)))
 
 var databaseSet = wire.NewSet(infrastructures.NewPostgresDatabase, wire.Bind(new(infrastructures.Database), new(*infrastructures.PostgresDatabase)))
+
+var messagingSet = wire.NewSet(messaging.NewPaymentConsumer)
+
+var appSet = wire.NewSet(NewApp)
