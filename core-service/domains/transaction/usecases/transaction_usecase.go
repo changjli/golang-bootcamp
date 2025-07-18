@@ -1,17 +1,19 @@
 package usecases
 
 import (
-	"context"
 	"core-service/domains/transaction"
 	"core-service/domains/transaction/entities"
 	"core-service/domains/transaction/models/requests"
 	"core-service/domains/transaction/models/responses"
 	"core-service/domains/wallet"
 	"core-service/infrastructures"
+	"core-service/infrastructures/messaging"
 	"errors"
+	"events"
 	"fmt"
 	"math"
 	"time"
+	"utils/helpers"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -22,17 +24,19 @@ type TransactionUseCaseImpl struct {
 	db         infrastructures.Database
 	trxRepo    transaction.TransactionRepository
 	walletRepo wallet.WalletRepository
+	publisher  messaging.PaymentPublisher
 }
 
-func NewTransactionUsecase(db infrastructures.Database, trxRepo transaction.TransactionRepository, walletRepo wallet.WalletRepository) *TransactionUseCaseImpl {
+func NewTransactionUsecase(db infrastructures.Database, trxRepo transaction.TransactionRepository, walletRepo wallet.WalletRepository, publisher messaging.PaymentPublisher) *TransactionUseCaseImpl {
 	return &TransactionUseCaseImpl{
 		db:         db,
 		trxRepo:    trxRepo,
 		walletRepo: walletRepo,
+		publisher:  publisher,
 	}
 }
 
-func (u *TransactionUseCaseImpl) TopUp(ctx *gin.Context, userID string, req *requests.TopUpRequest) (*responses.TopUpResponse, error) {
+func (u *TransactionUseCaseImpl) TopUp(ctx *gin.Context, userID int, req *requests.TopUpRequest) (*responses.TopUpResponse, error) {
 	var response *responses.TopUpResponse
 	err := u.db.GetInstance().Transaction(func(tx *gorm.DB) error {
 		// Get the user's wallet and lock it for the update.
@@ -46,7 +50,6 @@ func (u *TransactionUseCaseImpl) TopUp(ctx *gin.Context, userID string, req *req
 
 		// Create the transaction record.
 		topUpTrx := &entities.Transaction{
-			ID:     uuid.NewString(),
 			UserID: userID,
 			Type:   entities.TopUp,
 			Amount: req.Amount,
@@ -72,7 +75,7 @@ func (u *TransactionUseCaseImpl) TopUp(ctx *gin.Context, userID string, req *req
 	return response, err
 }
 
-func (u *TransactionUseCaseImpl) Transfer(ctx *gin.Context, fromUserID string, req *requests.TransferRequest) (*responses.TransferResponse, error) {
+func (u *TransactionUseCaseImpl) Transfer(ctx *gin.Context, fromUserID int, req *requests.TransferRequest) (*responses.TransferResponse, error) {
 	// Business rule: a user cannot transfer to themselves.
 	if fromUserID == req.ToUserID {
 		return nil, errors.New("cannot transfer to the same account")
@@ -103,7 +106,6 @@ func (u *TransactionUseCaseImpl) Transfer(ctx *gin.Context, fromUserID string, r
 
 		// Create transaction record for the sender (transfer_out).
 		transferOutTrx := &entities.Transaction{
-			ID:         uuid.NewString(),
 			UserID:     fromUserID,
 			Type:       entities.TransferOut,
 			Amount:     req.Amount,
@@ -117,7 +119,6 @@ func (u *TransactionUseCaseImpl) Transfer(ctx *gin.Context, fromUserID string, r
 
 		// Create transaction record for the receiver (transfer_in).
 		transferInTrx := &entities.Transaction{
-			ID:         uuid.NewString(),
 			UserID:     req.ToUserID,
 			Type:       entities.TransferIn,
 			Amount:     req.Amount,
@@ -148,50 +149,8 @@ func (u *TransactionUseCaseImpl) Transfer(ctx *gin.Context, fromUserID string, r
 	return response, err
 }
 
-// InitiatePayment creates a pending payment transaction.
-func (u *TransactionUseCaseImpl) InitiatePayment(ctx *gin.Context, userID string, req *requests.PayRequest) (*responses.PayResponse, error) {
-	// Get current wallet to check balance and return it in the response.
-	currentWallet, err := u.walletRepo.GetByUserID(ctx, userID)
-	if err != nil {
-		return nil, fmt.Errorf("wallet not found: %w", err)
-	}
-
-	// Business rule: check if the user has enough funds to even initiate the payment.
-	if currentWallet.Balance < req.Amount {
-		return nil, errors.New("insufficient funds to initiate payment")
-	}
-
-	// Create the pending payment transaction record.
-	// NOTE: We do NOT use a DB transaction here and do NOT update the balance.
-	paymentTrx := &entities.Transaction{
-		ID:          uuid.NewString(),
-		UserID:      userID,
-		Type:        entities.Payment,
-		Amount:      req.Amount,
-		Status:      entities.Pending, // The key part of the requirement.
-		MerchantID:  req.MerchantID,
-		Description: req.Description,
-	}
-
-	// We use a temporary transaction here just for creating the single record.
-	err = u.db.GetInstance().Transaction(func(tx *gorm.DB) error {
-		return u.trxRepo.CreateInTx(ctx, tx, paymentTrx)
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to create payment record: %w", err)
-	}
-
-	response := &responses.PayResponse{
-		TransactionID: paymentTrx.ID,
-		Message:       "Payment initiated successfully. Awaiting confirmation.",
-		NewBalance:    currentWallet.Balance, // Return the current, unchanged balance.
-	}
-	return response, nil
-}
-
 // GetHistory retrieves a user's transaction history.
-func (u *TransactionUseCaseImpl) GetHistory(ctx *gin.Context, userID string, page int, limit int) (*responses.TransactionHistoryResponse, error) {
+func (u *TransactionUseCaseImpl) GetHistory(ctx *gin.Context, userID int, page int, limit int) (*responses.TransactionHistoryResponse, error) {
 	transactions, total, err := u.trxRepo.GetHistoryByUserID(ctx, userID, page, limit)
 	if err != nil {
 		return nil, fmt.Errorf("could not retrieve transaction history: %w", err)
@@ -221,31 +180,45 @@ func (u *TransactionUseCaseImpl) GetHistory(ctx *gin.Context, userID string, pag
 	return response, nil
 }
 
-// Run this using cron or scheduler
-// ExpirePayments finds and expires old pending payments.
-func (u *TransactionUseCaseImpl) ExpirePayments(ctx context.Context) error {
-	// Find all pending payments older than 10 minutes.
-	expirationTime := time.Now().Add(-10 * time.Minute)
-	expiredTrx, err := u.trxRepo.FindPendingPaymentsBefore(ctx, expirationTime)
+// InitiatePayment now publishes an event instead of creating a DB record.
+func (u *TransactionUseCaseImpl) InitiatePayment(ctx *gin.Context, userID int, req *requests.PayRequest) (*responses.PayResponse, error) {
+	claims, err := helpers.GetAuthenticatedClaims(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to find expired payments: %w", err)
+		return nil, err
 	}
 
-	if len(expiredTrx) == 0 {
-		return nil // Nothing to do.
+	// 1. Check if the user has sufficient funds. This validation remains in the core-service.
+	currentWallet, err := u.walletRepo.GetByUserID(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("wallet not found: %w", err)
+	}
+	if currentWallet.Balance < req.Amount {
+		return nil, errors.New("insufficient funds")
 	}
 
-	// Collect the IDs to update them in a single batch query.
-	idsToExpire := make([]string, len(expiredTrx))
-	for i, t := range expiredTrx {
-		idsToExpire[i] = t.ID
+	// 3. Create the event payload.
+	paymentID := uuid.NewString()
+	event := &events.PaymentRequestedEvent{
+		PaymentID:   paymentID,
+		UserID:      userID,
+		Amount:      req.Amount,
+		CreatedAt:   time.Now(),
+		AuthToken:   claims.TokenString,
+		Description: req.Description,
+		MerchantID:  req.MerchantID,
 	}
 
-	// Update their status to 'expired'.
-	if err := u.trxRepo.UpdateStatusInBatch(ctx, idsToExpire, entities.Expired); err != nil {
-		return fmt.Errorf("failed to update status for expired payments: %w", err)
+	// 4. Publish the event to RabbitMQ.
+	if err := u.publisher.PublishPaymentRequested(ctx, event); err != nil {
+		// If publishing fails, the payment cannot be initiated.
+		return nil, fmt.Errorf("failed to publish payment request: %w", err)
 	}
 
-	fmt.Printf("Expired %d payment transactions.\n", len(idsToExpire))
-	return nil
+	// 5. Immediately return a "pending" response to the user.
+	response := &responses.PayResponse{
+		TransactionID: paymentID,
+		Message:       "Payment request received and is being processed.",
+		NewBalance:    currentWallet.Balance, // The balance is not yet changed.
+	}
+	return response, nil
 }

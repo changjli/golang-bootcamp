@@ -3,9 +3,9 @@ package handlers
 import (
 	"core-service/domains/wallet"
 	"core-service/domains/wallet/models/requests"
-	"core-service/helpers"
 	"errors"
 	"net/http"
+	"utils/helpers"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -20,13 +20,13 @@ func NewWalletHandler(walletUsecase wallet.WalletUsecase) *WalletHandler {
 }
 
 func (h *WalletHandler) GetBalance(ctx *gin.Context) {
-	userID, err := helpers.GetAuthenticatedUserID(ctx)
+	claims, err := helpers.GetAuthenticatedClaims(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
 
-	balanceResponse, err := h.walletUsecase.GetBalance(ctx, userID)
+	balanceResponse, err := h.walletUsecase.GetBalance(ctx, claims.UserId)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			ctx.JSON(http.StatusNotFound, gin.H{"error": "Wallet not found for this user"})

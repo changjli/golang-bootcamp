@@ -1,11 +1,14 @@
 package entities
 
-import "time"
+import (
+	"core-service/domains/users/entities"
+
+	"gorm.io/gorm"
+)
 
 type Wallet struct {
-	ID        string    `json:"id"`         // Unique identifier for the wallet
-	UserID    string    `json:"user_id"`    // The ID of the user who owns the wallet
-	Balance   float64   `json:"balance"`    // The current balance of the wallet
-	CreatedAt time.Time `json:"created_at"` // Timestamp when the wallet was created
-	UpdatedAt time.Time `json:"updated_at"` // Timestamp when the wallet was last updated
+	gorm.Model               // Provides ID, CreatedAt, UpdatedAt, DeletedAt
+	UserID     int           `gorm:"not null;unique"` // Must match the User's ID type
+	Balance    float64       `gorm:"type:numeric(15,2);not null;default:0.00"`
+	User       entities.User `gorm:"foreignKey:UserID"` // Defines the relationship
 }

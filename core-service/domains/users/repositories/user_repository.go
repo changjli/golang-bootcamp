@@ -1,29 +1,28 @@
 package repositories
 
 import (
-	"errors"
-	"fmt"
 	"core-service/domains/users/entities"
 	"core-service/infrastructures"
+	"errors"
+	"fmt"
 
 	"github.com/gin-gonic/gin"
-	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
 var users []entities.User
 
-type UserRepository struct {
+type UserRepositoryImpl struct {
 	db infrastructures.Database
 }
 
-func NewUserRepository(db infrastructures.Database) *UserRepository {
-	return &UserRepository{
+func NewUserRepository(db infrastructures.Database) *UserRepositoryImpl {
+	return &UserRepositoryImpl{
 		db: db,
 	}
 }
 
-func (r *UserRepository) Save(ctx *gin.Context, user *entities.User) (*entities.User, error) {
+func (r *UserRepositoryImpl) Save(ctx *gin.Context, user *entities.User) (*entities.User, error) {
 	if err := r.db.GetInstance().WithContext(ctx).Create(user).Error; err != nil {
 		return nil, fmt.Errorf("[USER_REPOSITORY]: failed to save user: %w", err)
 	}
@@ -32,32 +31,35 @@ func (r *UserRepository) Save(ctx *gin.Context, user *entities.User) (*entities.
 
 }
 
-func (r *UserRepository) FindByUsername(ctx *gin.Context, username string) (*entities.User, error) {
+func (r *UserRepositoryImpl) FindbyName(ctx *gin.Context, name string) (*entities.User, error) {
 	var user entities.User
-	if err := r.db.GetInstance().WithContext(ctx).Where("username = ?", username).First(&user).Error; err != nil {
+	if err := r.db.GetInstance().WithContext(ctx).Where("name = ?", name).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("user is not found")
+		}
+		return nil, fmt.Errorf("database error: %w", err)
+	}
+	return &user, nil
+}
+
+func (r *UserRepositoryImpl) FindbyEmail(ctx *gin.Context, email string) (*entities.User, error) {
+	var user entities.User
+	if err := r.db.GetInstance().WithContext(ctx).Where("email = ?", email).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("user is not found")
+		}
+		return nil, fmt.Errorf("database error: %w", err)
+	}
+	return &user, nil
+}
+
+func (r *UserRepositoryImpl) FindbyID(ctx *gin.Context, id int) (*entities.User, error) {
+	var user entities.User
+	if err := r.db.GetInstance().WithContext(ctx).Where("id = ?", id).First(&user).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("[USER_REPOSITORY]: User not found")
 		}
 		return nil, fmt.Errorf("[USER_REPOSITORY]: failed to find user: %w", err)
 	}
 	return &user, nil
-}
-
-func (r *UserRepository) FindByUsernameAndPassword(ctx *gin.Context, username string, password string) (*entities.User, error) {
-	// First, find the user by their username.
-	user, err := r.FindByUsername(ctx, username)
-	if err != nil {
-		// Return a generic error to avoid revealing whether the username exists.
-		return nil, fmt.Errorf("[USER_REPOSITORY]: Invalid credentials")
-	}
-
-	// Compare the provided password with the stored hashed password.
-	err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password))
-	if err != nil {
-		// Passwords do not match.
-		return nil, fmt.Errorf("[USER_REPOSITORY]: Invalid credentials")
-	}
-
-	// Password is correct.
-	return user, nil
 }

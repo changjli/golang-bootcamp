@@ -15,7 +15,7 @@ func NewWalletUsecase(walletRepo wallet.WalletRepository) *WalletUseCaseImpl {
 	return &WalletUseCaseImpl{walletRepo: walletRepo}
 }
 
-func (u *WalletUseCaseImpl) GetBalance(ctx *gin.Context, userID string) (*responses.WalletBalanceResponse, error) {
+func (u *WalletUseCaseImpl) GetBalance(ctx *gin.Context, userID int) (*responses.WalletBalanceResponse, error) {
 	wallet, err := u.walletRepo.GetByUserID(ctx, userID)
 	if err != nil {
 		return nil, err // Propagate the error (e.g., record not found).

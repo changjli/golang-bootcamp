@@ -1,10 +1,8 @@
 package repositories
 
 import (
-	"context"
 	"core-service/domains/transaction/entities"
 	"core-service/infrastructures"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -22,7 +20,7 @@ func (r *TransactionRepositoryImpl) CreateInTx(ctx *gin.Context, tx *gorm.DB, tr
 	return tx.WithContext(ctx).Create(transaction).Error
 }
 
-func (r *TransactionRepositoryImpl) GetHistoryByUserID(ctx *gin.Context, userID string, page int, limit int) ([]entities.Transaction, int64, error) {
+func (r *TransactionRepositoryImpl) GetHistoryByUserID(ctx *gin.Context, userID int, page int, limit int) ([]entities.Transaction, int64, error) {
 	var transactions []entities.Transaction
 	var total int64
 	offset := (page - 1) * limit
@@ -38,21 +36,4 @@ func (r *TransactionRepositoryImpl) GetHistoryByUserID(ctx *gin.Context, userID 
 	}
 
 	return transactions, total, nil
-}
-
-func (r *TransactionRepositoryImpl) FindPendingPaymentsBefore(ctx context.Context, expirationTime time.Time) ([]entities.Transaction, error) {
-	var transactions []entities.Transaction
-	err := r.db.GetInstance().WithContext(ctx).
-		Where("type = ? AND status = ? AND created_at < ?", entities.Payment, entities.Pending, expirationTime).
-		Find(&transactions).Error
-	return transactions, err
-}
-
-func (r *TransactionRepositoryImpl) UpdateStatusInBatch(ctx context.Context, transactionIDs []string, status entities.TransactionStatus) error {
-	if len(transactionIDs) == 0 {
-		return nil
-	}
-	return r.db.GetInstance().WithContext(ctx).Model(&entities.Transaction{}).
-		Where("id IN ?", transactionIDs).
-		Update("status", status).Error
 }

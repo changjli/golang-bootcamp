@@ -2,19 +2,20 @@ package routes
 
 import (
 	transaction "core-service/domains/transaction/handlers"
-	"core-service/domains/users/handlers"
+	user "core-service/domains/users/handlers"
 	wallet "core-service/domains/wallet/handlers"
 	"core-service/middlewares"
 
 	"github.com/gin-gonic/gin"
 )
 
-func SetupRoutes(userHttp handlers.UserHttpInterface, walletHttp *wallet.WalletHandler, transactionHttp *transaction.TransactionHandler, authMiddleware *middlewares.AuthMiddleware) *gin.Engine {
+func SetupRoutes(userHttp *user.UserHttp, walletHttp *wallet.WalletHandler, transactionHttp *transaction.TransactionHandler, authMiddleware *middlewares.AuthMiddleware) *gin.Engine {
 	route := gin.Default()
 
 	api := route.Group("/api")
 
 	api.POST("/auth/login", userHttp.Login)
+	api.POST("/auth/register", userHttp.Register)
 
 	api.Use(authMiddleware.HandleProtectedRoutes)
 

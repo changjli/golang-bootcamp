@@ -1,7 +1,7 @@
 package responses
 
 type TransferResponse struct {
-	TransactionID string `json:"transactionID"`
+	TransactionID int    `json:"transactionID"`
 	Status        string `json:"status"`
 	Message       string `json:"message"`
 }

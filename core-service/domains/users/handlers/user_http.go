@@ -1,8 +1,8 @@
 package handlers
 
 import (
-	"core-service/domains/users/models/requests"
-	"core-service/domains/users/usecases"
+	"core-service/domains/users"
+	"core-service/domains/users/models"
 	"core-service/shared/models/responses"
 	"net/http"
 
@@ -10,17 +10,17 @@ import (
 )
 
 type UserHttp struct {
-	UserUseCase usecases.UserUseCaseInterface
+	UserUseCase users.UserUseCase
 }
 
-func NewUserHttp(userUseCase usecases.UserUseCaseInterface) *UserHttp {
+func NewUserHttp(userUseCase users.UserUseCase) *UserHttp {
 	return &UserHttp{
 		UserUseCase: userUseCase,
 	}
 }
 
 func (h *UserHttp) Login(c *gin.Context) {
-	var input requests.UserLoginRequest
+	var input models.LoginReq
 	err := c.ShouldBindJSON(&input)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -31,34 +31,60 @@ func (h *UserHttp) Login(c *gin.Context) {
 
 	res, err := h.UserUseCase.Login(c, input)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "Unauthorized",
+		c.JSON(http.StatusUnauthorized, responses.BasicResponse{
+			Error: err.Error(),
 		})
 		return
 	}
-	c.JSON(http.StatusOK, res)
+	c.JSON(http.StatusOK, responses.BasicResponse{
+		Data: res,
+	})
+}
+
+func (h *UserHttp) Register(c *gin.Context) {
+	var input models.RegisterReq
+	err := c.ShouldBindJSON(&input)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	res, err := h.UserUseCase.Register(c, input)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, responses.BasicResponse{
+			Error: err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, responses.BasicResponse{
+		Data: res,
+	})
 }
 
 func (h *UserHttp) Me(c *gin.Context) {
 	res, err := h.UserUseCase.Me(c)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
+		c.JSON(http.StatusInternalServerError, responses.BasicResponse{
+			Error: err.Error(),
 		})
 		return
 	}
-	c.JSON(http.StatusOK, res)
+	c.JSON(http.StatusOK, responses.BasicResponse{
+		Data: res,
+	})
 }
 
 func (h *UserHttp) Logout(c *gin.Context) {
 	err := h.UserUseCase.Logout(c)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": err.Error(),
+		c.JSON(http.StatusInternalServerError, responses.BasicResponse{
+			Error: err.Error(),
 		})
 		return
 	}
 	c.JSON(http.StatusOK, responses.BasicResponse{
-		Data: "Logout success",
+		Message: "Logout Successful",
 	})
 }

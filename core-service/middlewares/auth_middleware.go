@@ -2,10 +2,10 @@ package middlewares
 
 import (
 	accesstokens "core-service/domains/access_tokens"
-	"core-service/domains/users/entities"
 	"net/http"
 	"strings"
 	"time"
+	"utils/helpers"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -31,7 +31,8 @@ func (m *AuthMiddleware) HandleProtectedRoutes(c *gin.Context) {
 
 	tokenString := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer"))
 
-	claims := &entities.Claims{}
+	claims := &helpers.Claims{}
+	claims.TokenString = tokenString
 
 	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
 		return []byte("harusnyambildarienvini"), nil

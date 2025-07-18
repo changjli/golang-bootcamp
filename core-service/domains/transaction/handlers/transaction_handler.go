@@ -3,10 +3,9 @@ package handlers
 import (
 	"core-service/domains/transaction"
 	"core-service/domains/transaction/models/requests"
-	"core-service/domains/users/entities"
-	"errors"
 	"net/http"
 	"strconv"
+	"utils/helpers"
 
 	"github.com/gin-gonic/gin"
 )
@@ -19,22 +18,8 @@ func NewTransactionHandler(transactionUsecase transaction.TransactionUsecase) *T
 	return &TransactionHandler{transactionUsecase: transactionUsecase}
 }
 
-func (h *TransactionHandler) getAuthenticatedUserID(ctx *gin.Context) (string, error) {
-	ctxVal, exists := ctx.Get("claims")
-	if !exists {
-		return "", errors.New("user not authenticated")
-	}
-
-	claims, ok := ctxVal.(*entities.Claims)
-
-	if !ok {
-		return "", errors.New("invalid user ID format in token")
-	}
-	return string(claims.UserId), nil
-}
-
 func (h *TransactionHandler) TopUp(ctx *gin.Context) {
-	userID, err := h.getAuthenticatedUserID(ctx)
+	claims, err := helpers.GetAuthenticatedClaims(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
@@ -46,7 +31,7 @@ func (h *TransactionHandler) TopUp(ctx *gin.Context) {
 		return
 	}
 
-	response, err := h.transactionUsecase.TopUp(ctx, userID, &req)
+	response, err := h.transactionUsecase.TopUp(ctx, claims.UserId, &req)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -56,7 +41,7 @@ func (h *TransactionHandler) TopUp(ctx *gin.Context) {
 }
 
 func (h *TransactionHandler) Transfer(ctx *gin.Context) {
-	fromUserID, err := h.getAuthenticatedUserID(ctx)
+	claims, err := helpers.GetAuthenticatedClaims(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
@@ -68,7 +53,7 @@ func (h *TransactionHandler) Transfer(ctx *gin.Context) {
 		return
 	}
 
-	response, err := h.transactionUsecase.Transfer(ctx, fromUserID, &req)
+	response, err := h.transactionUsecase.Transfer(ctx, claims.UserId, &req)
 	if err != nil {
 		// Specific error handling for known business logic failures.
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -80,7 +65,7 @@ func (h *TransactionHandler) Transfer(ctx *gin.Context) {
 }
 
 func (h *TransactionHandler) GetHistory(ctx *gin.Context) {
-	userID, err := h.getAuthenticatedUserID(ctx)
+	claims, err := helpers.GetAuthenticatedClaims(ctx)
 	if err != nil {
 		ctx.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
@@ -100,7 +85,7 @@ func (h *TransactionHandler) GetHistory(ctx *gin.Context) {
 		limit = 10
 	}
 
-	response, err := h.transactionUsecase.GetHistory(ctx, userID, page, limit)
+	response, err := h.transactionUsecase.GetHistory(ctx, claims.UserId, page, limit)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

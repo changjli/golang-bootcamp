@@ -1,0 +1,49 @@
+version: "3.8"
+
+# This Docker Compose file sets up the complete local development environment
+
+services:
+  # --- Core Service Database ---
+  # This PostgreSQL instance is dedicated to the core-service.
+  core-db:
+    image: postgres:16-alpine
+    container_name: core-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: core_db
+    ports:
+      - "5433:5432"
+    volumes:
+      - core_db_data:/var/lib/postgresql/data
+
+  # --- Payment Service Database ---
+  # This is a separate PostgreSQL instance for the payment-service.
+  payment-db:
+    image: postgres:16-alpine
+    container_name: payment-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: payment_db
+    ports:
+      - "5434:5432"
+    volumes:
+      - payment_db_data:/var/lib/postgresql/data
+
+  # --- RabbitMQ Message Broker ---
+  # This service handles asynchronous communication between the microservices.
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672" # Port for application communication (AMQP)
+      - "15672:15672" # Port for the web management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+
+# Define named volumes to persist database data across container restarts.
+volumes:
+  core_db_data:
+  payment_db_data:

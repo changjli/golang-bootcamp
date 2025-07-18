@@ -7,8 +7,6 @@
 package main
 
 import (
-	"github.com/gin-gonic/gin"
-	"github.com/google/wire"
 	"core-service/domains/access_tokens"
 	repositories2 "core-service/domains/access_tokens/repositories"
 	"core-service/domains/access_tokens/usecases"
@@ -16,6 +14,7 @@ import (
 	handlers3 "core-service/domains/transaction/handlers"
 	repositories4 "core-service/domains/transaction/repositories"
 	usecases4 "core-service/domains/transaction/usecases"
+	"core-service/domains/users"
 	"core-service/domains/users/handlers"
 	"core-service/domains/users/repositories"
 	usecases2 "core-service/domains/users/usecases"
@@ -24,33 +23,45 @@ import (
 	repositories3 "core-service/domains/wallet/repositories"
 	usecases3 "core-service/domains/wallet/usecases"
 	"core-service/infrastructures"
+	"core-service/infrastructures/messaging"
 	"core-service/middlewares"
 	"core-service/routes"
+	"github.com/gin-gonic/gin"
+	"github.com/google/wire"
 )
 
 // Injectors from injector.go:
 
 func InitializeServer() (*gin.Engine, error) {
 	postgresDatabase := infrastructures.NewPostgresDatabase()
-	userRepository := repositories.NewUserRepository(postgresDatabase)
+	userRepositoryImpl := repositories.NewUserRepository(postgresDatabase)
 	accessTokenRepository := repositories2.NewAccessTokenRepository(postgresDatabase)
 	accessTokenUsecase := usecases.NewAccessTokenUsecase(accessTokenRepository)
-	userUseCase := usecases2.NewUserUseCase(userRepository, accessTokenUsecase)
-	userHttp := handlers.NewUserHttp(userUseCase)
+	userUseCaseImpl := usecases2.NewUserUseCase(userRepositoryImpl, accessTokenUsecase)
+	userHttp := handlers.NewUserHttp(userUseCaseImpl)
 	walletRepositoryImpl := repositories3.NewWalletRepository(postgresDatabase)
 	walletUseCaseImpl := usecases3.NewWalletUsecase(walletRepositoryImpl)
 	walletHandler := handlers2.NewWalletHandler(walletUseCaseImpl)
 	transactionRepositoryImpl := repositories4.NewTransactionRepository(postgresDatabase)
-	transactionUseCaseImpl := usecases4.NewTransactionUsecase(postgresDatabase, transactionRepositoryImpl, walletRepositoryImpl)
+	rabbitMqPublisher, err := messaging.NewRabbitMQPublisher()
+	if err != nil {
+		return nil, err
+	}
+	transactionUseCaseImpl := usecases4.NewTransactionUsecase(postgresDatabase, transactionRepositoryImpl, walletRepositoryImpl, rabbitMqPublisher)
 	transactionHandler := handlers3.NewTransactionHandler(transactionUseCaseImpl)
 	authMiddleware := middlewares.NewAuthMiddleware(accessTokenUsecase)
 	engine := routes.SetupRoutes(userHttp, walletHandler, transactionHandler, authMiddleware)
 	return engine, nil
 }
 
+func InitializeMigrator() (*infrastructures.PostgresDatabase, error) {
+	postgresDatabase := infrastructures.NewPostgresDatabase()
+	return postgresDatabase, nil
+}
+
 // injector.go:
 
-var userSet = wire.NewSet(repositories.NewUserRepository, wire.Bind(new(repositories.UserRepositoryInterface), new(*repositories.UserRepository)), usecases2.NewUserUseCase, wire.Bind(new(usecases2.UserUseCaseInterface), new(*usecases2.UserUseCase)), handlers.NewUserHttp, wire.Bind(new(handlers.UserHttpInterface), new(*handlers.UserHttp)))
+var userSet = wire.NewSet(repositories.NewUserRepository, wire.Bind(new(users.UserRepository), new(*repositories.UserRepositoryImpl)), usecases2.NewUserUseCase, wire.Bind(new(users.UserUseCase), new(*usecases2.UserUseCaseImpl)), handlers.NewUserHttp)
 
 var accessTokenSet = wire.NewSet(repositories2.NewAccessTokenRepository, wire.Bind(new(accesstokens.AccessTokenRepositoryInterface), new(*repositories2.AccessTokenRepository)), usecases.NewAccessTokenUsecase, wire.Bind(new(accesstokens.AccessTokenUsecaseInterface), new(*usecases.AccessTokenUsecase)))
 
@@ -59,3 +70,5 @@ var walletSet = wire.NewSet(repositories3.NewWalletRepository, wire.Bind(new(wal
 var transactionSet = wire.NewSet(repositories4.NewTransactionRepository, wire.Bind(new(transaction.TransactionRepository), new(*repositories4.TransactionRepositoryImpl)), usecases4.NewTransactionUsecase, wire.Bind(new(transaction.TransactionUsecase), new(*usecases4.TransactionUseCaseImpl)), handlers3.NewTransactionHandler)
 
 var databaseSet = wire.NewSet(infrastructures.NewPostgresDatabase, wire.Bind(new(infrastructures.Database), new(*infrastructures.PostgresDatabase)))
+
+var messagingSet = wire.NewSet(messaging.NewRabbitMQPublisher, wire.Bind(new(messaging.PaymentPublisher), new(*messaging.RabbitMqPublisher)))

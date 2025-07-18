@@ -11,14 +11,16 @@ import (
 	transactionhandlers "core-service/domains/transaction/handlers"
 	transactionrepositories "core-service/domains/transaction/repositories"
 	transactionusecases "core-service/domains/transaction/usecases"
-	"core-service/domains/users/handlers"
-	"core-service/domains/users/repositories"
-	"core-service/domains/users/usecases"
+	"core-service/domains/users"
+	userhandlers "core-service/domains/users/handlers"
+	userrepositories "core-service/domains/users/repositories"
+	userusecases "core-service/domains/users/usecases"
 	"core-service/domains/wallet"
 	wallethandlers "core-service/domains/wallet/handlers"
 	walletrepositories "core-service/domains/wallet/repositories"
 	walletusecases "core-service/domains/wallet/usecases"
 	"core-service/infrastructures"
+	"core-service/infrastructures/messaging"
 	"core-service/middlewares"
 	"core-service/routes"
 
@@ -27,12 +29,11 @@ import (
 )
 
 var userSet = wire.NewSet(
-	repositories.NewUserRepository,
-	wire.Bind(new(repositories.UserRepositoryInterface), new(*repositories.UserRepository)),
-	usecases.NewUserUseCase,
-	wire.Bind(new(usecases.UserUseCaseInterface), new(*usecases.UserUseCase)),
-	handlers.NewUserHttp,
-	wire.Bind(new(handlers.UserHttpInterface), new(*handlers.UserHttp)),
+	userrepositories.NewUserRepository,
+	wire.Bind(new(users.UserRepository), new(*userrepositories.UserRepositoryImpl)),
+	userusecases.NewUserUseCase,
+	wire.Bind(new(users.UserUseCase), new(*userusecases.UserUseCaseImpl)),
+	userhandlers.NewUserHttp,
 )
 
 var accessTokenSet = wire.NewSet(
@@ -63,9 +64,15 @@ var databaseSet = wire.NewSet(
 	wire.Bind(new(infrastructures.Database), new(*infrastructures.PostgresDatabase)),
 )
 
+var messagingSet = wire.NewSet(
+	messaging.NewRabbitMQPublisher,
+	wire.Bind(new(messaging.PaymentPublisher), new(*messaging.RabbitMqPublisher)),
+)
+
 func InitializeServer() (*gin.Engine, error) {
 	wire.Build(
 		middlewares.NewAuthMiddleware,
+		messagingSet,
 		userSet,
 		accessTokenSet,
 		walletSet,
@@ -74,5 +81,12 @@ func InitializeServer() (*gin.Engine, error) {
 		routes.SetupRoutes,
 	)
 
+	return nil, nil
+}
+
+func InitializeMigrator() (*infrastructures.PostgresDatabase, error) {
+	wire.Build(
+		databaseSet,
+	)
 	return nil, nil
 }

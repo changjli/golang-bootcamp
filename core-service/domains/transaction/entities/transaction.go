@@ -1,7 +1,9 @@
 package entities
 
 import (
-	"time"
+	"core-service/domains/users/entities"
+
+	"gorm.io/gorm"
 )
 
 // TransactionType defines the type of a transaction.
@@ -27,15 +29,16 @@ const (
 // Transaction represents the core transaction entity in the system.
 // It's a single source of truth for all transaction records.
 type Transaction struct {
-	ID          string            `json:"id" gorm:"primaryKey"`
-	UserID      string            `json:"user_id"` // The user who owns this transaction record
-	Type        TransactionType   `json:"type"`
-	Amount      float64           `json:"amount"`
-	Status      TransactionStatus `json:"status"`
-	FromUserID  string            `json:"from_user_id"` // Source of funds (for transfers)
-	ToUserID    string            `json:"to_user_id"`   // Destination of funds (for transfers)
-	MerchantID  string            `json:"merchant_id"`  // Merchant ID for payments
-	Description string            `json:"description"`
-	CreatedAt   time.Time         `json:"created_at"`
-	UpdatedAt   time.Time         `json:"updated_at"`
+	gorm.Model
+	ID          int               `gorm:"type:uuid;primary_key;"`
+	UserID      int               `gorm:"type:uuid;not null"`
+	Type        TransactionType   `gorm:"type:string;not null"`
+	Amount      float64           `gorm:"type:numeric(15,2);not null"`
+	Status      TransactionStatus `gorm:"type:string;not null"`
+	FromUserID  int               `gorm:"type:uuid"`
+	ToUserID    int               `gorm:"type:uuid"`
+	Description string            `gorm:"type:varchar(255)"`
+	User        entities.User     `gorm:"foreignKey:UserID"`
+	FromUser    entities.User     `gorm:"foreignKey:FromUserID"`
+	ToUser      entities.User     `gorm:"foreignKey:ToUserID"`
 }

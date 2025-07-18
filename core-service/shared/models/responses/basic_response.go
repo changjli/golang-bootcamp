@@ -1,6 +1,7 @@
 package responses
 
 type BasicResponse struct {
-	Data  interface{} `json:"data,omitempty"`
-	Error string      `json:"error,omitempty"`
+	Data    interface{} `json:"data,omitempty"`
+	Error   string      `json:"error,omitempty"`
+	Message string      `json:"message,omitempty"`
 }
