@@ -19,7 +19,7 @@ type PaymentConsumer struct {
 
 // NewPaymentConsumer creates a new consumer service.
 func NewPaymentConsumer(trxUsecase transaction.TransactionUsecase) (*PaymentConsumer, error) {
-	conn, err := amqp091.Dial("amqp://guest:guest@localhost:5672/")
+	conn, err := amqp091.Dial("amqp://guest:guest@rabbitmq:5672/")
 	if err != nil {
 		return nil, err
 	}

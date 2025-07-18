@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 	"log"
+	"os"
+	"os/signal"
+	"syscall"
 )
 
 func main() {
@@ -20,4 +23,15 @@ func main() {
 	// 3. Start the RabbitMQ consumer in a separate goroutine.
 	// This will listen for new payment requests.
 	go app.Consumer.StartConsumer(ctx)
+
+	quit := make(chan os.Signal, 1)
+
+	// Notify the channel on SIGINT (Ctrl+C) or SIGTERM.
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
+	// Block until a signal is received.
+	<-quit
+
+	// When a signal is received, the program continues from here.
+	log.Println("Shutting down application...")
 }

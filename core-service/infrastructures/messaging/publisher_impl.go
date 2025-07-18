@@ -17,7 +17,7 @@ type RabbitMqPublisher struct {
 
 // NewRabbitMQPublisher creates a new publisher and connects to RabbitMQ.
 func NewRabbitMQPublisher() (*RabbitMqPublisher, error) {
-	conn, err := amqp091.Dial("amqp://guest:guest@localhost:5672/")
+	conn, err := amqp091.Dial("amqp://guest:guest@rabbitmq:5672/")
 	if err != nil {
 		return nil, err
 	}

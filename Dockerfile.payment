@@ -1,0 +1,35 @@
+# Dockerfile.payment (place in project root)
+
+# --- Builder Stage ---
+FROM golang:1.23-alpine AS builder
+
+# Set the working directory inside the container
+WORKDIR /app
+
+# Copy all Go module and workspace files
+COPY go.work go.work.sum ./
+COPY core-service/go.mod core-service/go.sum ./core-service/
+COPY payment-service/go.mod payment-service/go.sum ./payment-service/
+COPY events/go.mod ./events/
+COPY utils/go.mod ./utils/
+
+# Copy the entire source code of your project
+COPY . .
+
+RUN CGO_ENABLED=0 go build -o /app/payment-service-binary ./payment-service
+
+# --- Final Stage ---
+FROM alpine:latest
+WORKDIR /app/
+
+RUN apk add --no-cache tzdata
+
+COPY --from=builder /app/payment-service-binary .
+
+COPY ./payment-service/.env .
+
+# Expose the port for the payment-service.
+# We'll use 8081 to avoid conflict with core-service's 8080.
+EXPOSE 8081
+
+CMD ["./payment-service-binary"]
